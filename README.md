@@ -17,18 +17,15 @@ govalgin-annotation/
 ├── vite.config.js
 ├── package.json
 ├── .env.example
+├── .github/
+│   └── workflows/
+│       └── deploy.yml          # auto-deploys to GitHub Pages on push to main
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
 │   ├── supabaseClient.js
 │   ├── config/
-│   │   └── countries.js
-│   ├── lib/
-│   │   ├── AuthContext.jsx
-│   │   ├── ProtectedRoute.jsx
-│   │   ├── AdminRoute.jsx
-│   │   ├── csv.js
-│   │   └── time.js
+│   │   └── countries.js        # COUNTRY_CONFIG and country constants
 │   ├── pages/
 │   │   ├── Login.jsx
 │   │   ├── CountrySelect.jsx
@@ -38,7 +35,8 @@ govalgin-annotation/
 │   │   ├── PromptCard.jsx
 │   │   ├── AnnotationForm.jsx
 │   │   ├── ProgressBar.jsx
-│   │   └── LawDocuments.jsx
+│   │   ├── LawDocuments.jsx
+│   │   └── ProtectedRoute.jsx
 │   └── styles/
 │       └── main.css
 ├── supabase/
@@ -80,6 +78,45 @@ This creates:
 3. **Public:** off (we use signed URLs).
 4. **File size limit:** 50 MB.
 5. **Allowed MIME types:** `application/pdf`.
+
+Then, in the SQL Editor, run these bucket policies:
+
+```sql
+-- Allow any authenticated user to read law docs
+create policy "law-docs: authenticated read" on storage.objects
+  for select using (
+    bucket_id = 'law-docs'
+    and auth.role() = 'authenticated'
+  );
+
+-- Allow admin to upload/update/delete
+create policy "law-docs: admin upload" on storage.objects
+  for insert with check (
+    bucket_id = 'law-docs'
+    and exists (
+      select 1 from public.annotators a
+      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
+    )
+  );
+
+create policy "law-docs: admin update" on storage.objects
+  for update using (
+    bucket_id = 'law-docs'
+    and exists (
+      select 1 from public.annotators a
+      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
+    )
+  );
+
+create policy "law-docs: admin delete" on storage.objects
+  for delete using (
+    bucket_id = 'law-docs'
+    and exists (
+      select 1 from public.annotators a
+      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
+    )
+  );
+```
 
 ### 1.4 Enable Google OAuth
 
@@ -129,45 +166,61 @@ The app will be at <http://localhost:5173>. The first Google sign-in will land o
 
 ## 3. Deploying to GitHub Pages
 
+The repo includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) that auto-builds and publishes on every push to `main`. Once it's set up, you never deploy manually.
+
 ### 3.1 Set the base path
 
-In `vite.config.js`, change the `base` field to match your GitHub repo name:
+In `vite.config.js`, the `base` field must match your GitHub repo name:
 
 ```js
 export default defineConfig({
   plugins: [react()],
-  base: '/<your-repo-name>/',
+  base: '/<your-repo-name>/',   // e.g. '/govalgin-annotation/'
 })
 ```
 
-### 3.2 Build
+This repo is already configured for `base: '/govalgin-annotation/'`. If you fork it, change it to match your repo name.
 
-```bash
-npm run build
+### 3.2 Configure GitHub Pages
+
+1. In your GitHub repo, go to **Settings → Pages**.
+2. Under **Build and deployment → Source**, select **GitHub Actions**.
+
+### 3.3 Add repository secrets
+
+The build step needs Supabase credentials at build time (they're inlined into the bundle).
+
+1. Go to **Settings → Secrets and variables → Actions → New repository secret**.
+2. Add two secrets:
+
+| Name | Value |
+| --- | --- |
+| `VITE_SUPABASE_URL` | `https://<your-project-ref>.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Your Supabase **anon** (public) key |
+
+Use the **anon** key — never the service-role key, which would expose full DB access to every visitor.
+
+### 3.4 Push to `main`
+
+That's it. Every push to `main` triggers the workflow. Watch the **Actions** tab to see the build. Once it's green, your site is live at:
+
+```
+https://<your-github-username>.github.io/<your-repo-name>/
 ```
 
-This writes the static site to `dist/`.
+The first run takes a minute or two. Subsequent runs are faster.
 
-### 3.3 Publish
+### 3.5 (Optional) Manual deploy via `gh-pages`
 
-The simplest path: push the `dist/` folder to a `gh-pages` branch.
+If you'd rather not use Actions:
 
 ```bash
-# One-time
 npm install -D gh-pages
-
-# Add to package.json "scripts":
-#   "deploy": "gh-pages -d dist"
-
-npm run build
-npm run deploy
+# Add to package.json "scripts":  "deploy": "gh-pages -d dist"
+npm run build && npm run deploy
 ```
 
 Then in GitHub → *Settings → Pages*, set the source to the `gh-pages` branch (root).
-
-### 3.4 GitHub Actions (alternative)
-
-If you prefer CI, the official Vite template works well — point it at `dist/`. The build needs the env vars `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` set as repo secrets.
 
 ---
 
@@ -231,10 +284,10 @@ The Save button is disabled until all three groups are valid.
 
 Only `pulkitchatwal@gmail.com` can reach `/admin`. The dashboard has 4 tabs:
 
-1. **Upload Dataset** — pick country, drop a CSV, click Upload. Validates columns and upserts in batches.
-2. **Upload Law Documents** — country, law name, description, PDF file → uploads to `law-docs` bucket at `{country}/{filename}` and inserts a row in `law_documents`.
-3. **Annotator Management** — view, edit, or soft-remove (clear countries) any annotator.
-4. **Export Annotations** — per-country summary, per-annotator stats, simple IAA %, plus download buttons (one for all, one per country).
+1. **Upload Dataset** — pick country, drop a CSV, click Upload. Validates columns and upserts in batches. Below the form: per-country counts with a **Delete all** button, and a **Manage individual prompts** section (filter by id / article / dimension, delete one at a time).
+2. **Upload Law Documents** — pick country, enter law name + description, choose source (upload PDF **or** paste an external URL) → uploads to `law-docs` bucket and inserts a row in `law_documents`. The list below shows every doc with a per-row **Delete** button.
+3. **Annotator Management** — view, edit countries, **soft remove** (clear countries), or **hard delete** (removes the row AND all their annotations). The primary admin email is protected from hard-delete.
+4. **Export Annotations** — per-country summary, per-annotator stats, simple IAA %, plus download buttons (one for all, one per country). Exports paginate to avoid truncation.
 
 ---
 
