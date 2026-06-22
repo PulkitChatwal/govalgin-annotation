@@ -54,6 +54,12 @@ export default function AnnotationForm({ initial, mode = 'save', onSubmit, submi
                    (form.implicitness === 'explicit' || form.implicitness === 'implicit')
   const canSubmit = q1Valid && allQ2Set && q34Valid && !submitting
 
+  // Build a helpful message for what's blocking submission
+  const blockers = []
+  if (!q1Valid) blockers.push('Q1 (choose Yes/Partial/No)')
+  if (!allQ2Set) blockers.push('Q2 (set all 5 fields to True or False)')
+  if (!q34Valid) blockers.push('Q3+Q4 (choose one of the 4 grid options)')
+
   const handleSubmit = (e) => {
     e?.preventDefault?.()
     if (!canSubmit) return
@@ -181,6 +187,11 @@ export default function AnnotationForm({ initial, mode = 'save', onSubmit, submi
         >
           {submitting ? 'Saving…' : mode === 'update' ? 'Update & Next' : 'Save & Next →'}
         </button>
+        {!canSubmit && !submitting && blockers.length > 0 && (
+          <p className="muted small" style={{ marginTop: 8, color: '#c00' }}>
+            Still need: {blockers.join(' · ')}
+          </p>
+        )}
       </div>
     </form>
   )

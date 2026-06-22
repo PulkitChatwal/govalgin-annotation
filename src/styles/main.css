@@ -125,6 +125,21 @@ a:hover { text-decoration: underline; }
   color: #1c1c1c;
 }
 
+.btn-danger {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  background: #a83224;
+  border-color: #a83224;
+}
+
+.btn-small {
+  font-size: 0.8rem;
+  padding: 4px 10px;
+}
+
 /* Login page */
 .login-page {
   min-height: 100vh;
@@ -168,6 +183,19 @@ a:hover { text-decoration: underline; }
   border-radius: 6px;
   padding: 24px;
   margin-bottom: 24px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
 }
 
 .field {
@@ -253,6 +281,27 @@ a:hover { text-decoration: underline; }
   background: #1a3a5c;
   color: #fff;
   border-color: #1a3a5c;
+}
+
+/* Session goal slider */
+.session-goal {
+  background: #f4f6f8;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+.goal-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+.goal-slider {
+  width: 100%;
+  max-width: 360px;
+  cursor: pointer;
+  accent-color: #1a3a5c;
 }
 
 /* Progress bar */

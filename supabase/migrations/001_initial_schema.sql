@@ -97,27 +97,51 @@ alter table public.prompts       enable row level security;
 alter table public.annotations   enable row level security;
 alter table public.law_documents enable row level security;
 
+-- ── Admin lookup table (no RLS — used to break policy recursion) ──────────────
+-- We store admin emails in a separate table that has NO row level security.
+-- This lets admin policies query it from within the `annotators` RLS context
+-- without triggering the same policies again (which would cause infinite
+-- recursion). Storing admin status in the main `annotators` table requires
+-- either a SECURITY DEFINER helper (which Postgres still applies RLS to in
+-- Supabase) or JWT custom claims (which require a separate Auth hook). A
+-- tiny unprotected lookup table is the simplest reliable fix.
+create table if not exists public.admins (
+  email text primary key
+);
+
+-- Pre-seed the admin email.
+insert into public.admins (email) values ('pulkitchatwal@gmail.com')
+  on conflict do nothing;
+
+-- ── Helper: is_admin(email) ───────────────────────────────────────────────────
+-- Convenience wrapper around the unprotected `admins` table. Inlined into
+-- the policies so we can use it from RLS contexts.
+create or replace function public.is_admin(p_email text)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public, pg_temp
+as $$
+  select exists (select 1 from public.admins where email = p_email)
+$$;
+
 -- Annotators: users can read their own row
 create policy "annotators: read own" on public.annotators
   for select using (email = auth.jwt() ->> 'email');
 
 -- Admin can read all annotators
 create policy "annotators: admin read all" on public.annotators
-  for select using (
-    exists (
-      select 1 from public.annotators a
-      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
-    )
-  );
+  for select using (public.is_admin(auth.jwt() ->> 'email'));
 
 -- Admin can update annotators
 create policy "annotators: admin update" on public.annotators
-  for update using (
-    exists (
-      select 1 from public.annotators a
-      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
-    )
-  );
+  for update using (public.is_admin(auth.jwt() ->> 'email'));
+
+-- Users can update their own row (CountrySelect needs this to save countries/name)
+create policy "annotators: update own" on public.annotators
+  for update using (email = auth.jwt() ->> 'email')
+  with check (email = auth.jwt() ->> 'email');
 
 -- Annotators: self-insert (first login creates record)
 create policy "annotators: insert self" on public.annotators
@@ -129,12 +153,7 @@ create policy "prompts: authenticated read" on public.prompts
 
 -- Prompts: only admin can insert/update/delete
 create policy "prompts: admin write" on public.prompts
-  for all using (
-    exists (
-      select 1 from public.annotators a
-      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.jwt() ->> 'email'));
 
 -- Annotations: users can read and write their own
 create policy "annotations: own" on public.annotations
@@ -142,12 +161,7 @@ create policy "annotations: own" on public.annotations
 
 -- Admin can read all annotations
 create policy "annotations: admin read all" on public.annotations
-  for select using (
-    exists (
-      select 1 from public.annotators a
-      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
-    )
-  );
+  for select using (public.is_admin(auth.jwt() ->> 'email'));
 
 -- Law documents: any authenticated user can read
 create policy "law_docs: authenticated read" on public.law_documents
@@ -155,12 +169,7 @@ create policy "law_docs: authenticated read" on public.law_documents
 
 -- Admin can manage law docs
 create policy "law_docs: admin write" on public.law_documents
-  for all using (
-    exists (
-      select 1 from public.annotators a
-      where a.email = auth.jwt() ->> 'email' and a.is_admin = true
-    )
-  );
+  for all using (public.is_admin(auth.jwt() ->> 'email'));
 
 -- ── RPCs ──────────────────────────────────────────────────────────────────────
 -- These exist because the Supabase JS client can't issue subqueries

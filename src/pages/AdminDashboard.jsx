@@ -69,7 +69,14 @@ function UploadDatasetTab({ showToast }) {
       return
     }
     const rows = parsed.data.map((r) => ({
-      ...r,
+      id: r.prompt_id,                                  // map CSV's prompt_id → table's id (primary key)
+      jurisdiction: r.jurisdiction,
+      law_article: r.law_article,
+      compliance_dimension: r.compliance_dimension,
+      prompt_text: r.prompt_text,
+      expected_behavior: r.expected_behavior,
+      violation_type: r.violation_type,
+      language: r.language,
       country,
       uploaded_by: 'pulkitchatwal@gmail.com',
     }))
@@ -130,16 +137,161 @@ function UploadDatasetTab({ showToast }) {
 
       <h3>Current prompts by country</h3>
       <table className="data-table">
-        <thead><tr><th>Country</th><th>Prompts</th></tr></thead>
+        <thead><tr><th>Country</th><th>Prompts</th><th>Actions</th></tr></thead>
         <tbody>
           {COUNTRIES.map((c) => (
             <tr key={c}>
               <td>{COUNTRY_CONFIG[c]?.flag} {c}</td>
               <td>{counts[c] || 0}</td>
+              <td>
+                {(counts[c] || 0) > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-danger btn-small"
+                    onClick={async () => {
+                      if (!confirm(`Delete ALL {(counts[c] || 0)} prompts for ${c}? This cannot be undone.`)) return
+                      setBusy(true)
+                      // Also delete their annotations
+                      const { data: pids } = await supabase.from('prompts').select('id').eq('country', c)
+                      if (pids?.length) {
+                        await supabase.from('annotations').delete().in('prompt_id', pids.map(p => p.id))
+                      }
+                      const { error } = await supabase.from('prompts').delete().eq('country', c)
+                      if (error) {
+                        showToast(`Delete failed: ${error.message}`, 'error')
+                      } else {
+                        showToast(`Deleted all prompts for ${c}`, 'success')
+                        refreshCounts()
+                      }
+                      setBusy(false)
+                    }}
+                    disabled={busy}
+                  >
+                    Delete all
+                  </button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+
+      <h3>Manage individual prompts</h3>
+      <p className="muted small">
+        Pick a country to view and delete individual prompts. To edit fields, delete and re-upload via CSV.
+      </p>
+      <ManagePromptsSection showToast={showToast} onCountsChanged={refreshCounts} />
+    </div>
+  )
+}
+
+// Sub-component: list, search, and delete individual prompts for a country.
+function ManagePromptsSection({ showToast, onCountsChanged }) {
+  const [country, setCountry] = useState(COUNTRIES[0])
+  const [prompts, setPrompts] = useState([])
+  const [filter, setFilter] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('prompts')
+      .select('id, law_article, compliance_dimension, language')
+      .eq('country', country)
+      .order('id', { ascending: true })
+    if (error) {
+      showToast(`Load failed: ${error.message}`, 'error')
+      setPrompts([])
+    } else {
+      setPrompts(data || [])
+    }
+  }, [country, showToast])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const deletePrompt = async (id) => {
+    if (!confirm(`Delete prompt ${id}? This also removes all annotations for this prompt.`)) return
+    setBusy(true)
+    await supabase.from('annotations').delete().eq('prompt_id', id)
+    const { error } = await supabase.from('prompts').delete().eq('id', id)
+    setBusy(false)
+    if (error) {
+      showToast(`Delete failed: ${error.message}`, 'error')
+    } else {
+      showToast(`Deleted ${id}`, 'success')
+      refresh()
+      onCountsChanged?.()
+    }
+  }
+
+  const filtered = prompts.filter((p) => {
+    if (!filter) return true
+    const f = filter.toLowerCase()
+    return (
+      p.id.toLowerCase().includes(f) ||
+      (p.law_article || '').toLowerCase().includes(f) ||
+      (p.compliance_dimension || '').toLowerCase().includes(f)
+    )
+  })
+
+  return (
+    <div>
+      <div className="filter-row">
+        <label className="field">
+          <span>Country</span>
+          <select value={country} onChange={(e) => setCountry(e.target.value)}>
+            {COUNTRIES.map((c) => (
+              <option key={c} value={c}>{COUNTRY_CONFIG[c]?.flag} {c}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Filter (id, law_article, dimension)</span>
+          <input
+            type="text"
+            value={filter}
+            placeholder="e.g. CONSENT, DPDPA-CONSENT-001"
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </label>
+      </div>
+      <p className="muted small">Showing {filtered.length} of {prompts.length} prompts</p>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Law article</th>
+            <th>Compliance dimension</th>
+            <th>Language</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {filtered.length === 0 && (
+            <tr><td colSpan={5} className="muted">No prompts match.</td></tr>
+          )}
+          {filtered.slice(0, 100).map((p) => (
+            <tr key={p.id}>
+              <td className="mono">{p.id}</td>
+              <td className="muted small">{p.law_article}</td>
+              <td className="muted small">{p.compliance_dimension}</td>
+              <td className="muted small">{p.language}</td>
+              <td>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-small"
+                  onClick={() => deletePrompt(p.id)}
+                  disabled={busy}
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {filtered.length > 100 && (
+        <p className="muted small">Showing first 100 of {filtered.length}. Use the filter to narrow down.</p>
+      )}
     </div>
   )
 }
@@ -150,6 +302,8 @@ function UploadLawDocsTab({ showToast }) {
   const [lawName, setLawName] = useState('')
   const [description, setDescription] = useState('')
   const [file, setFile] = useState(null)
+  const [url, setUrl] = useState('')
+  const [inputType, setInputType] = useState('file') // 'file' or 'url'
   const [busy, setBusy] = useState(false)
   const [docs, setDocs] = useState([])
 
@@ -164,36 +318,61 @@ function UploadLawDocsTab({ showToast }) {
   useEffect(() => { refresh() }, [refresh])
 
   const onUpload = async () => {
-    if (!file || !lawName) {
-      showToast('Law name and file are required', 'error')
+    if (!lawName) {
+      showToast('Law name is required', 'error')
+      return
+    }
+    if (inputType === 'file' && !file) {
+      showToast('Please choose a PDF file', 'error')
+      return
+    }
+    if (inputType === 'url' && !url) {
+      showToast('Please enter a URL', 'error')
       return
     }
     setBusy(true)
-    const path = `${country}/${file.name}`
-    const { error: upErr } = await supabase.storage
-      .from('law-docs')
-      .upload(path, file, { upsert: true })
-    if (upErr) {
-      showToast(`Upload failed: ${upErr.message}`, 'error')
-      setBusy(false)
-      return
+
+    let filename, storagePath, isExternalUrl
+
+    if (inputType === 'file') {
+      // File upload to Supabase Storage
+      filename = file.name
+      storagePath = `${country}/${file.name}`
+      isExternalUrl = false
+
+      const { error: upErr } = await supabase.storage
+        .from('law-docs')
+        .upload(storagePath, file, { upsert: true })
+      if (upErr) {
+        showToast(`Upload failed: ${upErr.message}`, 'error')
+        setBusy(false)
+        return
+      }
+    } else {
+      // URL input — store the URL directly
+      filename = lawName.replace(/\s+/g, '_') + '.pdf' // Placeholder filename
+      storagePath = url
+      isExternalUrl = true
     }
+
     const { error: insErr } = await supabase
       .from('law_documents')
       .insert({
         country,
         law_name: lawName,
         description,
-        filename: file.name,
-        storage_path: path,
+        filename,
+        storage_path: storagePath,
+        is_external_url: isExternalUrl,
       })
     if (insErr) {
       showToast(`DB insert failed: ${insErr.message}`, 'error')
       setBusy(false)
       return
     }
-    showToast('Law document uploaded', 'success')
+    showToast('Law document added', 'success')
     setFile(null)
+    setUrl('')
     setLawName('')
     setDescription('')
     refresh()
@@ -237,21 +416,65 @@ function UploadLawDocsTab({ showToast }) {
           />
         </label>
         <label className="field">
-          <span>PDF file</span>
-          <input
-            type="file"
-            accept="application/pdf"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-          />
+          <span>Source type</span>
+          <div className="radio-row" style={{ display: 'flex', gap: 12 }}>
+            <label className="radio-option">
+              <input
+                type="radio"
+                name="input_type"
+                value="file"
+                checked={inputType === 'file'}
+                onChange={() => setInputType('file')}
+              />
+              <span>Upload PDF file</span>
+            </label>
+            <label className="radio-option">
+              <input
+                type="radio"
+                name="input_type"
+                value="url"
+                checked={inputType === 'url'}
+                onChange={() => setInputType('url')}
+              />
+              <span>External URL</span>
+            </label>
+          </div>
         </label>
+
+        {inputType === 'file' ? (
+          <label className="field">
+            <span>PDF file</span>
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+            />
+          </label>
+        ) : (
+          <label className="field">
+            <span>URL (e.g. https://example.com/law.pdf)</span>
+            <input
+              type="url"
+              value={url}
+              placeholder="https://..."
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </label>
+        )}
+
         <div className="form-actions">
           <button
             type="button"
             className="btn btn-primary"
             onClick={onUpload}
-            disabled={busy || !file || !lawName}
+            disabled={
+              busy ||
+              !lawName ||
+              (inputType === 'file' && !file) ||
+              (inputType === 'url' && !url)
+            }
           >
-            {busy ? 'Uploading…' : 'Upload'}
+            {busy ? 'Uploading…' : 'Add'}
           </button>
         </div>
       </div>
@@ -351,6 +574,33 @@ function AnnotatorManagementTab({ showToast }) {
     refresh()
   }
 
+  const hardDeleteAnnotator = async (a) => {
+    if (a.email === 'pulkitchatwal@gmail.com') {
+      showToast('Cannot delete the primary admin', 'error')
+      return
+    }
+    if (!confirm(`HARD DELETE ${a.email}? This removes the annotator AND all their annotations. Cannot be undone.`)) return
+    // Delete annotations first, then the annotator row
+    const { error: annErr } = await supabase
+      .from('annotations')
+      .delete()
+      .eq('annotator_email', a.email)
+    if (annErr) {
+      showToast(`Failed to delete annotations: ${annErr.message}`, 'error')
+      return
+    }
+    const { error } = await supabase
+      .from('annotators')
+      .delete()
+      .eq('id', a.id)
+    if (error) {
+      showToast(`Delete failed: ${error.message}`, 'error')
+      return
+    }
+    showToast(`Hard-deleted ${a.email}`, 'success')
+    refresh()
+  }
+
   if (loading) return <div className="page-loading">Loading annotators…</div>
 
   return (
@@ -404,10 +654,13 @@ function AnnotatorManagementTab({ showToast }) {
                 {editingId !== a.id && (
                   <>
                     <button type="button" className="btn btn-ghost" onClick={() => startEdit(a)}>
-                      Edit countries
+                      Edit
                     </button>
                     <button type="button" className="btn btn-ghost" onClick={() => removeAnnotator(a)}>
-                      Remove
+                      Soft remove
+                    </button>
+                    <button type="button" className="btn btn-danger btn-small" onClick={() => hardDeleteAnnotator(a)}>
+                      Hard delete
                     </button>
                   </>
                 )}

@@ -6,7 +6,7 @@ export default function PromptCard({ prompt, showExpected, onToggleExpected, sho
   return (
     <div className="prompt-card">
       <div className="prompt-header">
-        <span className="prompt-id">{prompt.prompt_id}</span>
+        <span className="prompt-id">{prompt.id}</span>
         <span className="prompt-jurisdiction">{prompt.jurisdiction}</span>
       </div>
       <div className="prompt-meta">

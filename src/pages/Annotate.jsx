@@ -14,6 +14,7 @@ import AnnotationForm from '../components/AnnotationForm'
 import ProgressBar from '../components/ProgressBar'
 
 const STORAGE_KEY = 'govalgin.activeCountry'
+const GOAL_KEY = 'govalgin.sessionGoal'
 
 function Toast({ message, kind = 'info' }) {
   if (!message) return null
@@ -55,6 +56,31 @@ export default function Annotate() {
   // ── Prompt + form state ────────────────────────────────────────────────
   const [prompt, setPrompt] = useState(null)
   const [counts, setCounts] = useState({})   // { country: { total, done } }
+
+  // ── Session goal (slider): how many annotations this session ──────────
+  const [sessionGoal, setSessionGoal] = useState(() => {
+    const stored = Number(sessionStorage.getItem(GOAL_KEY))
+    return stored > 0 ? stored : 10
+  })
+  useEffect(() => {
+    sessionStorage.setItem(GOAL_KEY, String(sessionGoal))
+  }, [sessionGoal])
+
+  const sessionDone = assignedCountries.reduce(
+    (sum, c) => sum + (counts[c]?.done || 0),
+    0
+  )
+  const sessionStartDoneRef = useRef(null)
+  // Snapshot the cumulative done-count the first time we render with counts loaded
+  useEffect(() => {
+    if (sessionStartDoneRef.current === null && assignedCountries.length > 0) {
+      sessionStartDoneRef.current = sessionDone
+    }
+  }, [sessionDone, assignedCountries.length])
+  const sessionProgress = sessionStartDoneRef.current !== null
+    ? Math.max(0, sessionDone - sessionStartDoneRef.current)
+    : 0
+  const sessionReached = sessionProgress >= sessionGoal
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showExpected, setShowExpected] = useState(false)
@@ -256,9 +282,28 @@ export default function Annotate() {
 
       <ProgressBar done={countsForActive.done} total={countsForActive.total} className="main-progress" />
 
+      {/* Session goal slider */}
+      <div className="session-goal">
+        <label className="goal-label">
+          <span className="muted small">
+            Session goal: <strong>{sessionProgress}/{sessionGoal}</strong> annotations
+            {sessionReached && <> · 🎉 goal reached!</>}
+          </span>
+          <input
+            type="range"
+            min="1"
+            max="50"
+            step="1"
+            value={sessionGoal}
+            onChange={(e) => setSessionGoal(Number(e.target.value))}
+            className="goal-slider"
+          />
+        </label>
+      </div>
+
       {mode === 'update' && editingPrompt && (
         <p className="mode-banner">
-          Editing previous annotation: <strong>{editingPrompt.prompt_id}</strong>
+          Editing previous annotation: <strong>{editingPrompt.id}</strong>
         </p>
       )}
 

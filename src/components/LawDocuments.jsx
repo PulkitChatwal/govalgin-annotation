@@ -7,11 +7,12 @@ export default function LawDocuments({ country }) {
   const [open, setOpen] = useState(false)
   const [docs, setDocs] = useState([])
   const [loading, setLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const wrapperRef = useRef(null)
 
+  // Lazy-load docs the first time the dropdown is opened.
   useEffect(() => {
-    if (!open) return
-    setOpen(false) // will open after load
+    if (!open || hasLoaded) return
     setLoading(true)
     ;(async () => {
       const { data, error } = await supabase
@@ -24,9 +25,13 @@ export default function LawDocuments({ country }) {
         console.error('Failed to load law documents:', error)
         setDocs([])
       } else {
-        // Fetch signed URLs for each document
+        // Fetch signed URLs for each document.
+        // If is_external_url is true, just use the storage_path as the URL.
         const withUrls = await Promise.all(
           (data || []).map(async (doc) => {
+            if (doc.is_external_url) {
+              return { ...doc, signed_url: doc.storage_path }
+            }
             const { data: signed } = await supabase.storage
               .from('law-docs')
               .createSignedUrl(doc.storage_path, 3600)
@@ -36,9 +41,15 @@ export default function LawDocuments({ country }) {
         setDocs(withUrls)
       }
       setLoading(false)
-      setOpen(true)
+      setHasLoaded(true)
     })()
-  }, [country, open])
+  }, [country, open, hasLoaded])
+
+  // If country changes, refetch
+  useEffect(() => {
+    setHasLoaded(false)
+    setDocs([])
+  }, [country])
 
   // Close on outside click
   useEffect(() => {
@@ -52,23 +63,27 @@ export default function LawDocuments({ country }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  if (docs.length === 0 && !loading) {
-    return <span className="no-docs muted small">No law documents uploaded yet</span>
-  }
-
   return (
     <div className="law-docs" ref={wrapperRef}>
       <button
         type="button"
         className="btn btn-ghost law-docs-toggle"
         onClick={() => setOpen((v) => !v)}
-        disabled={loading && docs.length === 0}
+        disabled={loading}
       >
-        {loading ? 'Loading…' : `📄 Law documents (${docs.length}) ▾`}
+        {loading
+          ? 'Loading…'
+          : `📄 Law documents (${hasLoaded ? docs.length : '…'}) ${open ? '▴' : '▾'}`}
       </button>
-      {open && docs.length > 0 && (
+      {open && (
         <ul className="law-docs-list">
-          {docs.map((doc) => (
+          {!hasLoaded && (
+            <li className="muted small">Loading…</li>
+          )}
+          {hasLoaded && docs.length === 0 && (
+            <li className="muted small">No law documents uploaded yet.</li>
+          )}
+          {hasLoaded && docs.map((doc) => (
             <li key={doc.id}>
               <strong>{doc.law_name}</strong>
               {doc.description && <span className="muted small"> — {doc.description}</span>}
