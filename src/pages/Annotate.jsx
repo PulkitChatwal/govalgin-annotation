@@ -284,6 +284,14 @@ export default function Annotate() {
           {annotator.is_admin && (
             <Link to="/admin" className="btn btn-ghost">Admin</Link>
           )}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={handleDownloadMine}
+            disabled={downloadingCsv}
+          >
+            {downloadingCsv ? 'Preparing…' : 'Download my CSV'}
+          </button>
           <Link to="/select" className="btn btn-ghost">Change countries</Link>
           <button type="button" className="btn btn-ghost" onClick={signOut}>
             Sign out
