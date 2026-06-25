@@ -90,6 +90,9 @@ export default function Annotate() {
 
   const startedAtRef = useRef(Date.now())
 
+  const startedAtRef = useRef(Date.now())
+  const skippedIdsRef = useRef([])
+
   // ── Load counts (for the progress chips) ───────────────────────────────
   const loadCounts = useCallback(async () => {
     if (!annotator) return
