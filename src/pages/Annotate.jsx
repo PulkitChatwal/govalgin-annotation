@@ -85,6 +85,7 @@ export default function Annotate() {
   const sessionReached = sessionProgress >= sessionGoal
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [downloadingCsv, setDownloadingCsv] = useState(false)
   const [showExpected, setShowExpected] = useState(false)
   const [showViolation, setShowViolation] = useState(false)
   const [mode, setMode] = useState('save')
