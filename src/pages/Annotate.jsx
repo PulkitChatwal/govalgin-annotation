@@ -89,8 +89,6 @@ export default function Annotate() {
   const [editingPrompt, setEditingPrompt] = useState(null)
 
   const startedAtRef = useRef(Date.now())
-
-  const startedAtRef = useRef(Date.now())
   const skippedIdsRef = useRef([])
 
   // ── Load counts (for the progress chips) ───────────────────────────────
