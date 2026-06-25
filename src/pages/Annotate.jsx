@@ -130,6 +130,7 @@ export default function Annotate() {
     const { data, error } = await supabase.rpc('get_next_prompt', {
       p_country: activeCountry,
       p_email: annotator.email,
+      p_exclude: skippedIdsRef.current,                               
     })
     if (error) {
       showToast(error.message, 'error')
@@ -175,6 +176,7 @@ export default function Annotate() {
   // ── Skip: just advance to next prompt (no DB write) ────────────────────
   const handleSkip = () => {
     if (!prompt) return
+    skippedIdsRef.current = [...skippedIdsRef.current, prompt.id]  
     // Just reload the queue — since this prompt is unannotated, it will stay in
     // the queue and come back on the next session. We move on visually.
     showToast('Skipped — will return to queue', 'info')
