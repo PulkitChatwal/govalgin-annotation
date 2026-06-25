@@ -183,6 +183,45 @@ export default function Annotate() {
     showToast('Skipped — will return to queue', 'info')
     loadNext()
   }
+  // ── Download this annotator's own annotations as CSV ───────────────────
+  const handleDownloadMine = async () => {
+    if (!annotator) return
+    setDownloadingCsv(true)
+    let all = []
+    let from = 0
+    const PAGE = 1000
+    while (true) {
+      const { data, error } = await supabase
+        .from('annotations')
+        .select('*, prompts(*)')
+        .eq('annotator_email', annotator.email)
+        .order('submitted_at', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (error) {
+        showToast(`Download failed: ${error.message}`, 'error')
+        setDownloadingCsv(false)
+        return
+      }
+      all = all.concat(data || [])
+      if (!data || data.length < PAGE) break
+      from += PAGE
+    }
+    if (all.length === 0) {
+      showToast('You have no annotations yet', 'info')
+      setDownloadingCsv(false)
+      return
+    }
+    const flat = all.map((r) => {
+      const p = r.prompts || {}
+      const { prompts, ...rest } = r
+      return { ...rest, ...Object.fromEntries(Object.entries(p).map(([k, v]) => [`prompt_${k}`, v])) }
+    })
+    const csv = rowsToCsv(flat)
+    const slug = annotator.email.replace(/[^a-z0-9]+/gi, '_').toLowerCase()
+    downloadCsv(`govalign_my_annotations_${slug}_${todayIso()}.csv`, csv)
+    showToast(`Downloaded ${flat.length} annotation${flat.length === 1 ? '' : 's'}`, 'success')
+    setDownloadingCsv(false)
+  }
 
   // ── Previous: fetch the most recent saved annotation, pre-fill form ────
   const handlePrevious = async () => {
